@@ -1,3 +1,4 @@
+import fs from "fs";
 import Anthropic from "@anthropic-ai/sdk";
 import type {
   ContentBlockParam,
@@ -8,6 +9,7 @@ import type { ToolUseBlockParam } from "@anthropic-ai/sdk/resources.js";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import type { CallToolRequest } from "@modelcontextprotocol/sdk/types.js";
+import { parseArgs } from "util";
 
 const anthropic = new Anthropic();
 
@@ -16,6 +18,20 @@ type UserInputFn = () => Promise<string>;
 function getUserInputFromStdin(): UserInputFn {
   const iterator = console[Symbol.asyncIterator]();
   return async (): Promise<string> => (await iterator.next()).value;
+}
+
+function getUserInputFromFile(name: string): UserInputFn {
+  const contents = [fs.readFileSync(name).toString()];
+
+  return async (): Promise<string> =>
+    new Promise((resolve, reject) => {
+      const head = contents.pop();
+      if (head) {
+        resolve(head);
+      } else {
+        reject("EOF");
+      }
+    });
 }
 
 interface Display {
@@ -85,6 +101,7 @@ class Agent {
     private readonly llm: Anthropic,
     private readonly tools: ToolBox,
     private readonly display: Display,
+    private readonly systemPrompt?: string,
   ) {
     this.conversation = [];
   }
@@ -109,6 +126,7 @@ class Agent {
         model: "claude-3-7-sonnet-20250219",
         max_tokens: 1024,
         messages: this.conversation,
+        system: this.systemPrompt,
         tools: this.tools.toParam(),
       });
       this.appendToConversation(response.role, response.content);
@@ -283,10 +301,29 @@ for (const tool of toolbox) {
   console.log(tool.name, tool.description);
 }
 
+const { values } = parseArgs({
+  args: Bun.argv,
+  options: {
+    prompt: {
+      type: "string",
+    },
+  },
+  allowPositionals: true,
+});
+
 const agent = new Agent(
-  getUserInputFromStdin(),
+  values.prompt ? getUserInputFromFile(values.prompt) : getUserInputFromStdin(),
   anthropic,
   toolbox,
   new StdoutDisplay(),
+  await getSystemPrompt(),
 );
 await agent.run();
+
+async function getSystemPrompt(): Promise<string | undefined> {
+  try {
+    return fs.readFileSync("./system.md").toString("utf8");
+  } catch {
+    return undefined;
+  }
+}
