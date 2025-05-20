@@ -1,0 +1,16 @@
+{
+  "name": "ai.decode",
+  "module": "index.ts",
+  "type": "module",
+  "private": true,
+  "devDependencies": {
+    "@types/bun": "latest"
+  },
+  "peerDependencies": {
+    "typescript": "^5"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.51.0",
+    "@modelcontextprotocol/sdk": "^1.11.4"
+  }
+}

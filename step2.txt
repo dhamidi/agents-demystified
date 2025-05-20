@@ -1,0 +1,1 @@
+When I am asking you about the weather in location X, respond to me with get_weather(X), and only that.  I will then tell you what the weather in the location is like.
