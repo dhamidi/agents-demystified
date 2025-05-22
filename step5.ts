@@ -31,7 +31,7 @@ function getUserInputFromFile(
     new Promise((resolve, reject) => {
       const head = contents.pop();
       if (head) {
-        console.log("Using prompt:", head);
+        console.log(head);
         resolve(head);
       } else {
         fallback().then(resolve).catch(reject);
@@ -321,9 +321,17 @@ const { values } = parseArgs({
     system: {
       type: "string",
     },
+    "hide-tool-result": {
+      type: "boolean",
+    },
   },
   allowPositionals: true,
 });
+
+const display = new StdoutDisplay();
+if (values["hide-tool-result"]) {
+  display.showToolResultContent = async () => undefined;
+}
 
 const systemPrompt = await getSystemPrompt(values.system);
 const agent = new Agent(
@@ -332,7 +340,7 @@ const agent = new Agent(
     : getUserInputFromStdin(),
   anthropic,
   toolbox,
-  new StdoutDisplay(),
+  display,
   systemPrompt,
 );
 
