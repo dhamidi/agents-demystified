@@ -10,6 +10,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import type { CallToolRequest } from "@modelcontextprotocol/sdk/types.js";
 import { parseArgs } from "util";
+import { sys } from "typescript";
 
 const anthropic = new Anthropic();
 
@@ -20,16 +21,20 @@ function getUserInputFromStdin(): UserInputFn {
   return async (): Promise<string> => (await iterator.next()).value;
 }
 
-function getUserInputFromFile(name: string): UserInputFn {
+function getUserInputFromFile(
+  name: string,
+  fallback: UserInputFn,
+): UserInputFn {
   const contents = [fs.readFileSync(name).toString()];
 
   return async (): Promise<string> =>
     new Promise((resolve, reject) => {
       const head = contents.pop();
       if (head) {
+        console.log("Using prompt:", head);
         resolve(head);
       } else {
-        reject("EOF");
+        fallback().then(resolve).catch(reject);
       }
     });
 }
@@ -59,9 +64,15 @@ class StdoutDisplay {
     content: Anthropic.ToolResultBlockParam,
   ): Promise<void> {
     process.stdout.write("\x1b[33mTool\x1b[0m: ");
-    process.stdout.write(
-      `[${content.tool_use_id}] ${JSON.stringify(content.content, null, 2)}`,
-    );
+    if (typeof content.content === "string") {
+      process.stdout.write(`[${content.tool_use_id}] ${content}`);
+    } else if (content.content) {
+      for (const block of content.content) {
+        if (block.type === "text") {
+          this.showTextContent(block);
+        }
+      }
+    }
     process.stdout.write("\n");
   }
 }
@@ -123,7 +134,7 @@ class Agent {
 
       needsInput = true;
       const response = await this.llm.messages.create({
-        model: "claude-3-7-sonnet-20250219",
+        model: "claude-3-5-sonnet-20241022",
         max_tokens: 1024,
         messages: this.conversation,
         system: this.systemPrompt,
@@ -302,27 +313,41 @@ for (const tool of toolbox) {
 }
 
 const { values } = parseArgs({
-  args: Bun.argv,
+  args: process.argv,
   options: {
     prompt: {
+      type: "string",
+    },
+    system: {
       type: "string",
     },
   },
   allowPositionals: true,
 });
 
+const systemPrompt = await getSystemPrompt(values.system);
 const agent = new Agent(
-  values.prompt ? getUserInputFromFile(values.prompt) : getUserInputFromStdin(),
+  values.prompt
+    ? getUserInputFromFile(values.prompt, getUserInputFromStdin())
+    : getUserInputFromStdin(),
   anthropic,
   toolbox,
   new StdoutDisplay(),
-  await getSystemPrompt(),
+  systemPrompt,
 );
+
+if (systemPrompt) {
+  console.log(systemPrompt);
+}
+
 await agent.run();
 
-async function getSystemPrompt(): Promise<string | undefined> {
+async function getSystemPrompt(filename?: string): Promise<string | undefined> {
+  if (!filename) {
+    return undefined;
+  }
   try {
-    return fs.readFileSync("./system.md").toString("utf8");
+    return fs.readFileSync(filename).toString("utf8");
   } catch {
     return undefined;
   }
